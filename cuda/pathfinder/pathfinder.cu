@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <time.h>
 #include <assert.h>
+#include <cstring>
+#include <cuda_runtime_api.h>
+#include <device_launch_parameters.h>
 
 #define TIMING 1
 #define BENCH_PRINT 1
@@ -47,11 +50,11 @@ init(int argc, char **argv)
     printf("Usage: dynproc row_len col_len pyramid_height\n");
     exit(0);
   }
-  data = new int[rows * cols];
+  cudaMallocManaged((void **) &data, sizeof(int) * rows * cols);
   wall = new int *[rows];
   for (int n = 0; n < rows; n++)
     wall[n] = data + cols * n;
-  result = new int[cols];
+  cudaMallocManaged((void **) &result, sizeof(int) * cols * 2);
 
   int seed = M_SEED;
   srand(seed);
@@ -167,7 +170,7 @@ __global__ void dynproc_kernel(
 /*
    compute N time steps
 */
-int calc_path(int *gpuWall, int *gpuResult[2], int rows, int cols, \
+int calc_path(int *gpuWall, int *gpuResult, int rows, int cols, \
    int pyramid_height, int blockCols, int borderCols)
 {
   dim3 dimBlock(BLOCK_SIZE);
@@ -180,7 +183,7 @@ int calc_path(int *gpuWall, int *gpuResult[2], int rows, int cols, \
     dst = temp;
     dynproc_kernel<<<dimGrid, dimBlock>>>(
         MIN(pyramid_height, rows - t - 1),
-        gpuWall, gpuResult[src], gpuResult[dst],
+        gpuWall, gpuResult + src * cols, gpuResult + dst * cols,
         cols, rows, t, borderCols);
 
     // for the measurement fairness
@@ -212,20 +215,13 @@ void run(int argc, char **argv)
   printf("pyramidHeight: %d\ngridSize: [%d]\nborder:[%d]\nblockSize: %d\nblockGrid:[%d]\ntargetBlock:[%d]\n", \
   pyramid_height, cols, borderCols, BLOCK_SIZE, blockCols, smallBlockCol);
 
-  int *gpuWall, *gpuResult[2];
-  int size = rows * cols;
-
-  cudaMalloc((void **) &gpuResult[0], sizeof(int) * cols);
-  cudaMalloc((void **) &gpuResult[1], sizeof(int) * cols);
-  cudaMemcpy(gpuResult[0], data, sizeof(int) * cols, cudaMemcpyHostToDevice);
-  cudaMalloc((void **) &gpuWall, sizeof(int) * (size - cols));
-  cudaMemcpy(gpuWall, data + cols, sizeof(int) * (size - cols), cudaMemcpyHostToDevice);
+  std::memcpy(result, data, sizeof(int) * cols);
 
 #ifdef  TIMING
   gettimeofday(&tv_kernel_start, NULL);
 #endif
 
-  int final_ret = calc_path(gpuWall, gpuResult, rows, cols, \
+  int final_ret = calc_path(data + cols, result, rows, cols, \
    pyramid_height, blockCols, borderCols);
 
 #ifdef  TIMING
@@ -234,24 +230,18 @@ void run(int argc, char **argv)
   kernel_time += tv.tv_sec * 1000.0 + (float) tv.tv_usec / 1000.0;
 #endif
 
-  cudaMemcpy(result, gpuResult[final_ret], sizeof(int) * cols, cudaMemcpyDeviceToHost);
-
 #ifdef BENCH_PRINT
   for (int i = 0; i < cols; i++)
     printf("%d ", data[i]);
   printf("\n");
   for (int i = 0; i < cols; i++)
-    printf("%d ", result[i]);
+    printf("%d ", result[final_ret * cols + i]);
   printf("\n");
 #endif
 
-  cudaFree(gpuWall);
-  cudaFree(gpuResult[0]);
-  cudaFree(gpuResult[1]);
-
-  delete[] data;
+  cudaFree(data);
   delete[] wall;
-  delete[] result;
+  cudaFree(result);
 
 #ifdef  TIMING
   printf("Exec: %f\n", kernel_time);
