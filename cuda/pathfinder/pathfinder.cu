@@ -214,6 +214,8 @@ void run(int argc, char **argv)
   pyramid_height, cols, borderCols, BLOCK_SIZE, blockCols, smallBlockCol);
 
   std::memcpy(result, data, sizeof(int) * cols);
+  cudaMemPrefetchAsync(data, sizeof(int) * rows * cols, DEVICE);
+  cudaMemPrefetchAsync(result, sizeof(int) * cols * 2, DEVICE);
 
 #ifdef  TIMING
   gettimeofday(&tv_kernel_start, NULL);
