@@ -185,10 +185,8 @@ int calc_path(int *gpuWall, int *gpuResult, int rows, int cols, \
         MIN(pyramid_height, rows - t - 1),
         gpuWall, gpuResult + src * cols, gpuResult + dst * cols,
         cols, rows, t, borderCols);
-
-    // for the measurement fairness
-    cudaDeviceSynchronize();
   }
+  cudaDeviceSynchronize();
   return dst;
 }
 
