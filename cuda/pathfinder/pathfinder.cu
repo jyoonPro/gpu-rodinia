@@ -137,6 +137,7 @@ __global__ void dynproc_kernel(
   }
   __syncthreads(); // [Ronny] Added sync to avoid race on prev Aug. 14 2012
   bool computed;
+#pragma unroll 10
   for (int i = 0; i < iteration; i++) {
     computed = false;
     if (IN_RANGE(tx, i + 1, BLOCK_SIZE - i - 2) && \
@@ -214,6 +215,8 @@ void run(int argc, char **argv)
   pyramid_height, cols, borderCols, BLOCK_SIZE, blockCols, smallBlockCol);
 
   std::memcpy(result, data, sizeof(int) * cols);
+  cudaMemAdvise(data, sizeof(int) * rows * cols, cudaMemAdviseSetReadMostly, DEVICE);
+  cudaMemAdvise(result, sizeof(int) * cols * 2, cudaMemAdviseSetAccessedBy, DEVICE);
   cudaMemPrefetchAsync(data, sizeof(int) * rows * cols, DEVICE);
   cudaMemPrefetchAsync(result, sizeof(int) * cols * 2, DEVICE);
 
